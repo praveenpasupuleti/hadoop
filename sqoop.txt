@@ -1,0 +1,168 @@
+# Procedure 1:
+# sqoop import from oracle, full table with no parallelism */
+export HADOOP_CLASSPATH= /data/var/lib/sqoop/ojdbc6.jar <-Loction pointing the location of oracle Jdbc jar. Alternatively SQOOP_HOME should be set.
+
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password ******* \
+--table APRIMO_RPT.MAP_ATTACHMENTS_V \
+--target-dir /tmp/sqooptest12/ \
+-m 1 
+
+# procedure 2:
+# sqoop import from oracle with password form secure file and increased parallelism */
+echo -n "password" > /home/a_opset1_dev/.password <= local/HDFS path can be used to store password chmod 400 .password <= Only access to user who created it.
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--split-by column_name \ 
+--target-dir /tmp/sqooptest12/ \
+--m 10
+
+Note: for increased parallelism column name (mostly primary key) required to split the records into multiple map tasks we can control by changing the value in option "-m" and we have to mention "--split-by" column name.
+
+# procedure 3:
+# sqoop import oracle table with a custom query (preferred method) */
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--query "select * from APRIMO_RPT.MAP_ATTACHMENTS_V where \$CONDITIONS and LAST_MODIFIED > DATE '2015-01-01'" \
+--split-by ATTACHMENT_ID \
+--target-dir /tmp/sqooptest12/ \
+--m 10
+Note: 
+1. $CONDITIONS- Query string different from different databases to databases. so use $CONDITIONS in the query. where query built and pass it to sqoop at the runtime daily loads.
+2. sqoop has capability of creating hive tables but it is only restricted to internal tables. for this we create hive external tables from beeline where extracted data supposed to reside by pointing to custom HDFS path.
+3. use sqoop import to land data into particular partition for the external table. For example: 
+--target-dir/tenants/raw/extract_name/loaddata = 20160101
+4. Tie back the partitional to the external. so that partition will be linked with the hive table. it can be done by beeline by ALTER TABLE extract_name ADD PARTITION(loaddata = 20160101) location 'tenants/raw/extract_name/loaddata = 20160101'
+
+# Procedure 4:
+# sqoop import from oracle with limited columns with full records */
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--columns "ACCOUNT_ID, ACCOUNT_NAME, ACCOUNT_TYPE" \
+--target-dir /tmp/sqooptest12/ \
+-- m 10
+Note: 
+The best way to import columns use "columns" instead of query. if you use -query you need use extra "FILTER" clause.
+
+# Procedure 5:
+# sqoop import from oracle with compression */
+
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--table FCTM.V_ACH_WIRE_JPMIS \
+--num-mappers 5 \
+--compress \
+--as-parquetfile \
+--target-dir /tmp/TDD_V_ach_wire_JPMIS_compress1/ \
+--split-by ACCOUNT_DISPLAY_ID
+--m 10
+Note: 
+It doesnot work with ORC file format. It only supports parquet, Avro, Sequence and text file.
+
+# Procedure 6:
+# sqoop import from Oracle in incremental mode */
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--table FCTM.V_ACH_WIRE_JPMIS \
+--incremental append \
+--check-column LAST_MODIFIED \
+--last-value 2015-01-01 \
+--split-by ATTACHMENT_ID \
+--target-dir /tmp/sqooptest17/ \
+--m 10
+Note: 
+To perform incremental mode we need additional information like "column" for which incremental check would be performed. so we should mention "column" with "--check-column" and we need keep track of "--last_value" of the column. where sqoop server stores "last-value" automatically. From next run it stores only records after previous run pulled.
+
+# Procedure 7:
+# sqoop import with Compression on Text Format and custom Line and Field Seperator (Ideal case to be used in Framework) */
+
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \ /* Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \ /* If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--table FCTM.V_ACH_WIRE_JPMIS \
+--columns "CUST_ADD_DT,ALT_CUST_ID,CUST_STAT_CD,FULL_NM" \
+--fields-terminated-by '\001' \
+--lines-terminated-by '\n' \
+--compress \
+--compression-codec snappy \
+--num-mappers 10 \
+--target-dir/tenants/opsdata/raw/TDD_V_ach_wire_JPMIS_compress15/
+--split-by ALT_CUST_ID
+Note:
+An external table created on top of HDFS and data is immediately accessible. we should create hive external table by using same "custom Line" and "Field Separator" and store the data on target diretory (--target-dir).
+
+# Procedure 8:
+# sqoop using "tnsnames.org files" while pulling from Oracle (For NETWORK ENCRYPTION) 
+
+To use the properties from tnsnames.ora and sqlnet.ora which holds lot of parameters, we can do below: -
+step 1: export HADOOP_OPTS= "-Doranet.net.tns_admin=$TNS_ADMIN" <= TNS_ADMIN env varible should point to the location where you have kept env specific tnsnames.ora and sqlnet.ora files.
+step 2: Add the below highlighted options in sqoop command :-
+sqoop import \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+-D mapred.map.child.java.opts='-Doracle.net.tns_admin= ' \
+-files $TNS_ADMIN/tnsnames.ora,$TNS_ADMIN/sqlnet.ora \
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657:BCD002Q \  #  Oracle SID is important to include in the JDBC conection string */
+--connect jdbc:oracle:thin:@mktcrsla-qa.card.jpmchase.net:1657/service_name \  # If oracle is using service name instead of SID, the JDBC string would use like this */
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--table FCTM.V_ACH_WIRE_JPMIS \
+--fields-terminated-by '\001' \
+--lines-terminated-by '\n' \
+--compress \
+--compression-codec snappy \
+--num-mappers 10 \
+--target-dir/tenants/opsdata/raw/TDD_V_ach_wire_JPMIS_compress15/
+--split-by ALT_CUST_ID
+
+# Procedure 9:
+# Sqoop import from Oracle by creating a job to support incremental load */
+#create sqoop job
+sqoop job \
+-Dmapreduce.job.queuename=root.opsdata.batch \
+--create testjob1 \
+-- \
+import \
+--connect jdbc:oracle:thin@mktcrsla-qa.card.jpmchase.net:1657/BCD002Q \
+--username E805021 \
+--password-file file:///home/a_opset1_dev/.password \
+--table APRIMO_RPT.MAP_ATTACHMENTS_V \
+--incremental append \
+--check-column LAST_MODIFIED \
+--last-value 2016-01-01 \
+--split-by ATTACHMENT_ID \
+--target-dir /tmp/hive_external_table_path/ \
+-m 10
+Note:
+1. It is bit tricky in the format, so do not deviate it a bit from above format, else job will created and throw "ERROR tool.BaseSqoop Tool: Error parsing arguments" error.
+2. #To execute sqoop job :- sqoop job --exec testjob1
+3. sqoop job needed to be created only once and then "sqoop job --exec" can run and fetch new records after first run automatically.
+4. Because now sqoop server stores the "--last-value" in its metadata. 
+
+

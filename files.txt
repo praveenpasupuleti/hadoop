@@ -1,1 +1,9 @@
 Hello
+
+In This week I have involved in Incident management, Knowledge Management for all hadoop and Ab initio Platform issues.
+
+I have constantly monitored the Hadoop and Ab initio platform issues and completed Resolving those. 
+
+Some of the SOR applications got failures like Technical Data Quality issues, Eegan Time out issues. I resolved these issues by coordinating with some precise Groups and Peoples.
+
+Apart from Hadoop there were some Ab initio issues like Jobs has failed due to time out problems. These incidents were also resolved by communicating with owners for those jobs. 
